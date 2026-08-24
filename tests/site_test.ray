@@ -1,0 +1,115 @@
+// Frontmatter, slugify, and the full build over a temp site.
+import std/fs;
+import content;
+import build;
+
+const SITE: string = "/tmp/raysite_test_site";
+
+fn wipe_dir(d: string) {
+    if (fs.exists(d)) {
+        match (fs.list_dir(d)) {
+            Result.Ok(names) => {
+                for f in names {
+                    fs.remove_file(d + "/" + f);
+                }
+            },
+            Result.Err(e) => { },
+        }
+    } else {
+        fs.mkdir(d);
+    }
+}
+
+fn must_read(p: string) -> string {
+    match (fs.read_file(p)) {
+        Result.Ok(s) => s,
+        Result.Err(e) => panic(e),
+    }
+}
+
+@test
+fn slugify_handles_spanish_and_junk() {
+    assert_eq(content.slugify("Hola Mundo"), "hola-mundo");
+    assert_eq(content.slugify("Señales & ruido: ¡ñandúes!"), "senales-ruido-nandues");
+    assert_eq(content.slugify("  --- "), "sin-titulo");
+    assert_eq(content.slugify("Ya-Con-Guiones"), "ya-con-guiones");
+}
+
+@test
+fn frontmatter_parses_and_defaults() {
+    let src = "+++\ntitle = \"Mi Post\"\ndate = \"2026-08-20\"\n+++\n\n# hola\n";
+    let p = match (content.parse_page("x.md", src)) {
+        Result.Ok(x) => x,
+        Result.Err(e) => panic(e),
+    };
+    assert_eq(p.title, "Mi Post");
+    assert_eq(p.slug, "mi-post");
+    assert(p.date_ms > 0);
+    assert(!p.draft);
+    assert_eq(p.markdown, "# hola");
+    // Without frontmatter: whole file is markdown.
+    let bare = match (content.parse_page("y.md", "solo texto")) {
+        Result.Ok(x) => x,
+        Result.Err(e) => panic(e),
+    };
+    assert_eq(bare.title, "y.md");
+    assert_eq(bare.markdown, "solo texto");
+    match (content.parse_page("z.md", "+++\ntitle = \"a\"\n")) {
+        Result.Err(e) => assert(e.contains("unclosed")),
+        Result.Ok(p2) => panic("expected unclosed error"),
+    }
+}
+
+@test
+fn build_renders_pages_index_and_rss() {
+    wipe_dir(SITE);
+    wipe_dir(SITE + "/content");
+    wipe_dir(SITE + "/public");
+    fs.write_file(
+        SITE + "/site.toml",
+        "[site]\ntitle = \"Bitácora\"\nbase_url = \"https://b.example\"\n"
+    );
+    fs.write_file(
+        SITE + "/content/uno.md",
+        "+++\ntitle = \"Post Viejo\"\ndate = \"2026-01-01\"\n+++\n\nTexto **fuerte** y `código`.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+    );
+    fs.write_file(
+        SITE + "/content/dos.md",
+        "+++\ntitle = \"Post Nuevo\"\ndate = \"2026-08-01\"\n+++\n\n[enlace](https://example.com) y <script>alert(1)</script>\n"
+    );
+    fs.write_file(
+        SITE + "/content/borrador.md",
+        "+++\ntitle = \"Draft\"\ndraft = true\n+++\nno debe salir\n"
+    );
+    let r = match (build.build(SITE)) {
+        Result.Ok(x) => x,
+        Result.Err(e) => panic(e),
+    };
+    assert_eq(r.pages, 2);
+    let viejo = must_read(SITE + "/public/post-viejo.html");
+    assert(viejo.contains("<strong>fuerte</strong>"));
+    assert(viejo.contains("<code>código</code>"));
+    assert(viejo.contains("<table>"));
+    assert(viejo.contains("Bitácora"));
+    let nuevo = must_read(SITE + "/public/post-nuevo.html");
+    assert(nuevo.contains("<a href=\"https://example.com\">enlace</a>"));
+    // Embedded HTML is ESCAPED by std/markdown (safe by design).
+    assert(!nuevo.contains("<script>"));
+    assert(nuevo.contains("&lt;script&gt;"));
+    // Index: newest first.
+    let idx = must_read(SITE + "/public/index.html");
+    let pos_nuevo = match (idx.index_of("Post Nuevo")) {
+        Option.Some(i) => i,
+        Option.None => panic("index missing Post Nuevo"),
+    };
+    let pos_viejo = match (idx.index_of("Post Viejo")) {
+        Option.Some(i) => i,
+        Option.None => panic("index missing Post Viejo"),
+    };
+    assert(pos_nuevo < pos_viejo);
+    assert(!idx.contains("Draft"));
+    // RSS present and pointing at base_url.
+    let feed = must_read(SITE + "/public/feed.xml");
+    assert(feed.contains("<rss version=\"2.0\">"));
+    assert(feed.contains("https://b.example/post-nuevo.html"));
+}

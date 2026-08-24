@@ -1,0 +1,191 @@
+// raysite — content loading: markdown files with TOML frontmatter (+++ … +++).
+import std/fs;
+import std/toml;
+from std/toml import TomlValue;
+import std/time;
+
+pub struct Page {
+    slug: string,
+    title: string,
+    date: string,
+    date_ms: int,
+    draft: bool,
+    markdown: string,
+}
+
+// Lowercase, ASCII-ish slug: letters/digits keep, the common Spanish
+// diacritics transliterate, everything else collapses to single dashes.
+// Unicode normalization does not exist in the language (recorded finding), so
+// anything outside this table just becomes a dash.
+pub fn slugify(s: string) -> string {
+    var out = "";
+    var dash = true;
+    for c in s.to_lower().chars() {
+        var mapped = "";
+        if (c >= 'a' && c <= 'z' || c >= '0' && c <= '9') {
+            mapped = to_string(c);
+        } else if (c == 'á') {
+            mapped = "a";
+        } else if (c == 'é') {
+            mapped = "e";
+        } else if (c == 'í') {
+            mapped = "i";
+        } else if (c == 'ó') {
+            mapped = "o";
+        } else if (c == 'ú' || c == 'ü') {
+            mapped = "u";
+        } else if (c == 'ñ') {
+            mapped = "n";
+        }
+        if (mapped != "") {
+            out = out + mapped;
+            dash = false;
+        } else if (!dash) {
+            out = out + "-";
+            dash = true;
+        }
+    }
+    while (out.ends_with("-")) {
+        out = out.substring(0, out.len() - 1);
+    }
+    if (out == "") { "sin-titulo" } else { out }
+}
+
+fn front_str(entries: [toml.TomlEntry], key: string, fallback: string) -> string {
+    match (toml.toml_get(entries, key)) {
+        Option.Some(v) => {
+            match (v) {
+                TomlValue.TStr(s) => s,
+                _ => fallback,
+            }
+        },
+        Option.None => fallback,
+    }
+}
+
+fn front_bool(entries: [toml.TomlEntry], key: string, fallback: bool) -> bool {
+    match (toml.toml_get(entries, key)) {
+        Option.Some(v) => {
+            match (v) {
+                TomlValue.TBool(b) => b,
+                _ => fallback,
+            }
+        },
+        Option.None => fallback,
+    }
+}
+
+// Splits "+++\n<toml>\n+++\n<markdown>"; a file without frontmatter is all
+// markdown with defaults.
+pub fn parse_page(filename: string, src: string) -> Result<Page, string> {
+    var meta = "";
+    var body = src;
+    if (src.starts_with("+++")) {
+        let after = src.substring(3, src.len());
+        match (after.index_of("+++")) {
+            Option.Some(end) => {
+                meta = after.substring(0, end);
+                body = after.substring(end + 3, after.len());
+            },
+            Option.None => {
+                return Result.Err(filename + ": unclosed +++ frontmatter");
+            },
+        }
+    }
+    var title = filename;
+    var date = "";
+    var draft = false;
+    if (meta != "") {
+        let entries = toml.parse_toml(meta)?;
+        title = front_str(entries, "title", filename);
+        date = front_str(entries, "date", "");
+        draft = front_bool(entries, "draft", false);
+    }
+    var date_ms = 0;
+    if (date != "") {
+        match (time.parse_iso8601(date + "T00:00:00Z")) {
+            Result.Ok(dt) => {
+                date_ms = time.to_epoch_millis(dt);
+            },
+            Result.Err(e) => {
+                match (time.parse_iso8601(date)) {
+                    Result.Ok(dt) => {
+                        date_ms = time.to_epoch_millis(dt);
+                    },
+                    Result.Err(e2) => {
+                        return Result.Err(filename + ": bad date '" + date + "'");
+                    },
+                }
+            },
+        }
+    }
+    Result.Ok(
+        Page {
+            slug: slugify(title),
+            title: title,
+            date: date,
+            date_ms: date_ms,
+            draft: draft,
+            markdown: body.trim()
+        }
+    )
+}
+
+// All non-draft pages under content/, newest first.
+pub fn load_all(content_dir: string) -> Result<[Page], string> {
+    var out: [Page] = [];
+    let names = fs.list_dir(content_dir)?;
+    for name in names {
+        if (name.ends_with(".md")) {
+            let src = fs.read_file(content_dir + "/" + name)?;
+            let p = parse_page(name, src)?;
+            if (!p.draft) {
+                out.push(p);
+            }
+        }
+    }
+    Result.Ok(sort_by_date(out))
+}
+
+fn merge_pages(a: [Page], b: [Page]) -> [Page] {
+    var out: [Page] = [];
+    var i = 0;
+    var j = 0;
+    while (i < a.len() && j < b.len()) {
+        if (a[i].date_ms >= b[j].date_ms) {
+            out.push(a[i]);
+            i = i + 1;
+        } else {
+            out.push(b[j]);
+            j = j + 1;
+        }
+    }
+    while (i < a.len()) {
+        out.push(a[i]);
+        i = i + 1;
+    }
+    while (j < b.len()) {
+        out.push(b[j]);
+        j = j + 1;
+    }
+    out
+}
+
+pub fn sort_by_date(xs: [Page]) -> [Page] {
+    if (xs.len() <= 1) {
+        return xs;
+    }
+    let mid = xs.len() / 2;
+    var left: [Page] = [];
+    var right: [Page] = [];
+    var i = 0;
+    while (i < xs.len()) {
+        if (i < mid) {
+            left.push(xs[i]);
+        } else {
+            right.push(xs[i]);
+        }
+        i = i + 1;
+    }
+    merge_pages(sort_by_date(left), sort_by_date(right))
+}

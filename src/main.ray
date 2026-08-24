@@ -1,0 +1,156 @@
+// raysite — a static site generator (Hugo, in very small).
+import std/fs;
+import std/time;
+import net/webserver;
+import content;
+import build;
+
+fn usage() {
+    eprint("usage:");
+    eprint("  raysite build [--dir SITE]        content/*.md (+++ TOML +++) -> public/");
+    eprint("  raysite serve [--dir SITE] [--port N]   serve public/ and rebuild on change");
+    eprint("  raysite new TITLE [--dir SITE]    scaffold a post");
+    eprint("");
+    eprint("  site layout: site.toml · content/*.md · templates/page.html (optional) · public/");
+}
+
+fn flag_value(av: [string], name: string) -> Option<string> {
+    var i = 0;
+    while (i + 1 < av.len()) {
+        if (av[i] == name) {
+            return Option.Some(av[i + 1]);
+        }
+        i = i + 1;
+    }
+    Option.None
+}
+
+fn flag_str(av: [string], name: string, fallback: string) -> string {
+    match (flag_value(av, name)) {
+        Option.Some(s) => s,
+        Option.None => fallback,
+    }
+}
+
+fn flag_int(av: [string], name: string, fallback: int) -> int {
+    match (flag_value(av, name)) {
+        Option.Some(s) => {
+            match (parse_int(s)) {
+                Option.Some(n) => n,
+                Option.None => fallback,
+            }
+        },
+        Option.None => fallback,
+    }
+}
+
+// Content fingerprint: mtimes of content/, templates/ and site.toml.
+fn fingerprint(dir: string) -> string {
+    var acc = "";
+    match (fs.mtime(dir + "/site.toml")) {
+        Result.Ok(t) => {
+            acc = acc + to_string(t) + ";";
+        },
+        Result.Err(e) => { },
+    }
+    for sub in ["content", "templates"] {
+        match (fs.list_dir(dir + "/" + sub)) {
+            Result.Ok(names) => {
+                for n in names {
+                    match (fs.mtime(dir + "/" + sub + "/" + n)) {
+                        Result.Ok(t) => {
+                            acc = acc + n + ":" + to_string(t) + ";";
+                        },
+                        Result.Err(e) => { },
+                    }
+                }
+            },
+            Result.Err(e) => { },
+        }
+    }
+    acc
+}
+
+fn run_build(dir: string) -> int {
+    match (build.build(dir)) {
+        Result.Ok(r) => {
+            print("built " + to_string(r.pages) + " page(s) into " + r.out_dir);
+            0
+        },
+        Result.Err(e) => {
+            eprint("raysite: " + e);
+            1
+        },
+    }
+}
+
+fn main() -> int {
+    let av = args();
+    if (av.len() < 1 || av[0] == "--help" || av[0] == "-h" || av[0] == "help") {
+        usage();
+        return if (av.len() < 1) { 1 } else { 0 };
+    }
+    let cmd = av[0];
+    let dir = flag_str(av, "--dir", ".");
+    if (cmd == "build") {
+        run_build(dir)
+    } else if (cmd == "serve") {
+        let port = flag_int(av, "--port", 8080);
+        run_build(dir);
+        // Rebuild-on-change: mtime polling (the 5th app to need a real fs
+        // watch — recorded finding, again).
+        spawn(fn() {
+            var last = fingerprint(dir);
+            while (true) {
+                time.sleep(1000);
+                let now = fingerprint(dir);
+                if (now != last) {
+                    last = now;
+                    run_build(dir);
+                }
+            }
+        });
+        eprint("raysite serving " + dir + "/public on http://127.0.0.1:" + to_string(port) + "/");
+        match (webserver.serve_graceful("127.0.0.1", port, 1000, fn(req: webserver.Request) -> webserver.Response {
+    let path = if (req.path == "/") { "/index.html" } else { req.path };
+    webserver.static_response(dir + "/public", path)
+})) {
+            Result.Ok(n) => 0,
+            Result.Err(e) => {
+                eprint("raysite: " + e);
+                1
+            },
+        }
+    } else if (cmd == "new") {
+        if (av.len() < 2) {
+            usage();
+            return 1;
+        }
+        let title = av[1];
+        let slug = content.slugify(title);
+        if (!fs.exists(dir + "/content")) {
+            fs.mkdir(dir + "/content");
+        }
+        let stamp = time.date_stamp(time.now_utc());
+        let path = dir + "/content/" + slug + ".md";
+        if (fs.exists(path)) {
+            eprint("raysite: " + path + " already exists");
+            return 1;
+        }
+        let front = "+++\ntitle = \"" + title + "\"\ndate = \"" + stamp + "\"\ndraft = true\n+++\n\nEscribe aquí.\n";
+        match (fs.write_file(path, front)) {
+            Result.Ok(n) => {
+                print(path);
+                0
+            },
+            Result.Err(e) => {
+                eprint("raysite: " + e);
+                1
+            },
+        }
+    } else {
+        eprint("raysite: unknown command: " + cmd);
+        usage();
+        1
+    }
+}

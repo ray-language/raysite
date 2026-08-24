@@ -1,0 +1,154 @@
+// raysite — the build: markdown → HTML through std/markdown's to_html (its
+// first real consumer: the ANSI renderer had raycode, the HTML one had nobody)
+// wrapped in std/template layouts, plus the index and the RSS feed.
+import std/fs;
+import std/toml;
+from std/toml import TomlValue;
+import std/markdown;
+import std/template;
+from std/template import ctx_str, escape_html;
+import content;
+
+pub struct SiteCfg {
+    title: string,
+    base_url: string,
+    author: string,
+}
+
+fn cfg_str(entries: [toml.TomlEntry], key: string, fallback: string) -> string {
+    match (toml.toml_get(entries, key)) {
+        Option.Some(v) => {
+            match (v) {
+                TomlValue.TStr(s) => s,
+                _ => fallback,
+            }
+        },
+        Option.None => fallback,
+    }
+}
+
+pub fn load_cfg(dir: string) -> SiteCfg {
+    var title = "raysite";
+    var base_url = "http://localhost:8080";
+    var author = "";
+    match (fs.read_file(dir + "/site.toml")) {
+        Result.Ok(src) => {
+            match (toml.parse_toml(src)) {
+                Result.Ok(entries) => {
+                    title = cfg_str(entries, "site.title", title);
+                    base_url = cfg_str(entries, "site.base_url", base_url);
+                    author = cfg_str(entries, "site.author", author);
+                },
+                Result.Err(e) => { },
+            }
+        },
+        Result.Err(e) => { },
+    }
+    SiteCfg { title: title, base_url: base_url, author: author }
+}
+
+const DEFAULT_LAYOUT: string = `<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} · {{ site_title }}</title>
+<style>
+  body { max-width: 46rem; margin: 2rem auto; padding: 0 1rem;
+         font: 17px/1.6 Georgia, serif; color: #222; }
+  header a { color: #888; text-decoration: none; font-variant: small-caps; }
+  h1 { line-height: 1.2; }
+  time { color: #888; font-size: .85em; }
+  pre { background: #f4f4f4; padding: .8rem; overflow-x: auto; font-size: .85em; }
+  code { background: #f4f4f4; padding: .1em .3em; }
+  pre code { padding: 0; }
+  table { border-collapse: collapse; }
+  td, th { border: 1px solid #ccc; padding: .3rem .6rem; }
+  ul.index { list-style: none; padding: 0; }
+  ul.index li { margin: .5rem 0; }
+</style>
+<header><a href="index.html">{{ site_title }}</a></header>
+<article>
+<h1>{{ title }}</h1>
+{% if date %}<time>{{ date }}</time>{% endif %}
+{{& content }}
+</article>
+`;
+
+fn layout_of(dir: string) -> string {
+    match (fs.read_file(dir + "/templates/page.html")) {
+        Result.Ok(s) => s,
+        Result.Err(e) => DEFAULT_LAYOUT,
+    }
+}
+
+fn render_page(
+    layout: string,
+    cfg: SiteCfg,
+    p: content.Page,
+    body_html: string
+) -> Result<string, string> {
+    let ctx = [
+        ctx_str("title", p.title),
+        ctx_str("site_title", cfg.title),
+        ctx_str("date", p.date),
+        ctx_str("content", body_html)
+    ];
+    template.render_template(layout, ctx)
+}
+
+fn index_html(pages: [content.Page]) -> string {
+    var items = "";
+    for p in pages {
+        items = items + "<li><a href=\"" + p.slug + ".html\">" + escape_html(
+            p.title
+        ) + "</a> <time>" + p.date + "</time></li>\n";
+    }
+    "<ul class=\"index\">\n" + items + "</ul>\n"
+}
+
+fn rss(cfg: SiteCfg, pages: [content.Page]) -> string {
+    var items = "";
+    var i = 0;
+    while (i < pages.len() && i < 20) {
+        let p = pages[i];
+        items = items + "  <item>\n    <title>" + escape_html(
+            p.title
+        ) + "</title>\n    <link>" + cfg.base_url + "/" + p.slug + ".html</link>\n    <guid>" + cfg.base_url + "/" + p.slug + ".html</guid>\n  </item>\n";
+        i = i + 1;
+    }
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\"><channel>\n<title>" + escape_html(
+        cfg.title
+    ) + "</title>\n<link>" + cfg.base_url + "</link>\n" + items + "</channel></rss>\n"
+}
+
+pub struct BuildResult {
+    pages: int,
+    out_dir: string,
+}
+
+pub fn build(dir: string) -> Result<BuildResult, string> {
+    let cfg = load_cfg(dir);
+    let pages = content.load_all(dir + "/content")?;
+    let out_dir = dir + "/public";
+    if (!fs.exists(out_dir)) {
+        fs.mkdir(out_dir)?;
+    }
+    let layout = layout_of(dir);
+    for p in pages {
+        let body = markdown.to_html(p.markdown);
+        let html = render_page(layout, cfg, p, body)?;
+        fs.write_file(out_dir + "/" + p.slug + ".html", html)?;
+    }
+    let idx_page = content.Page {
+        slug: "index",
+        title: cfg.title,
+        date: "",
+        date_ms: 0,
+        draft: false,
+        markdown: ""
+    };
+    let idx = render_page(layout, cfg, idx_page, index_html(pages))?;
+    fs.write_file(out_dir + "/index.html", idx)?;
+    fs.write_file(out_dir + "/feed.xml", rss(cfg, pages))?;
+    Result.Ok(BuildResult { pages: pages.len(), out_dir: out_dir })
+}
