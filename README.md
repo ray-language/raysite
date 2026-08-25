@@ -1,6 +1,6 @@
 # raysite
 
-Generador de sitios estáticos (Hugo, en muy pequeño), escrito en [raylang](https://github.com/roberto-ayala/raylang). Es el primer consumidor real del camino **Markdown → HTML** de `std/markdown` (raycode ya estrujaba el AST, pero lo pintaba en ANSI; `to_html` y su modelo de seguridad no tenían app): frontmatter TOML, layouts `std/template`, índice por fecha, RSS, y `serve` con rebuild al guardar.
+Generador de sitios estáticos (Hugo, en muy pequeño), escrito en [raylang](https://github.com/ray-language/raylang). Es el primer consumidor real del camino **Markdown → HTML** de `std/markdown` (raycode ya estrujaba el AST, pero lo pintaba en ANSI; `to_html` y su modelo de seguridad no tenían app): frontmatter TOML, layouts `std/template`, índice por fecha, RSS, y `serve` con rebuild al guardar.
 
 ```text
 $ raysite new "Señales y ruido"
