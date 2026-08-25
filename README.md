@@ -26,8 +26,9 @@ Estructura del sitio: `site.toml` ([site] title/base_url/author) ·
   `{{& }}` para el cuerpo ya-HTML.
 - `std/toml` (frontmatter + site.toml), `parse_iso8601` para ordenar por
   fecha, slugify con transliteración castellana, RSS a mano.
-- `serve`: `static_response` del webserver + rebuild por sondeo de mtimes
-  (quinta app que necesita el watch de fs).
+- `serve`: `static_response` del webserver + rebuild por EVENTOS de kernel
+  (`fs.watch`, raylang M115.4) con debounce — una ráfaga de guardados es un
+  solo rebuild; degrada a sondeo de mtimes si el watch no se puede armar.
 
 ## Estado actual
 
@@ -49,7 +50,7 @@ Anotados en `raylang/IDEAS.md` §71:
 1. **`markdown.to_html` cumple su promesa de seguridad** (positivo): el HTML
    embebido sale escapado sin sanitizador externo — el modelo "seguro por
    diseño" aguanta su primera app real.
-2. **Quinta app sondeando mtimes** (el watch de fs, otra vez).
+2. **[RESUELTO — raylang M115.4]** Quinta app sondeando mtimes: `fs.watch` existe y `serve` lo usa.
 3. **Sin normalización Unicode**: el slugify translitera a mano las vocales
    acentuadas del castellano y descarta el resto — `NFD`/`NFKD` no existen
    (predicho por el catálogo).
