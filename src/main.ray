@@ -97,17 +97,53 @@ fn main() -> int {
     } else if (cmd == "serve") {
         let port = flag_int(av, "--port", 8080);
         run_build(dir);
-        // Rebuild-on-change: mtime polling (the 5th app to need a real fs
-        // watch — recorded finding, again).
+        // Rebuild-on-change: kernel fs events (fs.watch, raylang M115.4) with a
+        // debounce — a burst of saves is ONE rebuild. Falls back to mtime
+        // polling if the watch cannot be armed.
         spawn(fn() {
-            var last = fingerprint(dir);
-            while (true) {
-                time.sleep(1000);
-                let now = fingerprint(dir);
-                if (now != last) {
-                    last = now;
-                    run_build(dir);
-                }
+            match (fs.watch(dir)) {
+                Result.Ok(w) => {
+                    while (true) {
+                        match (fs.next_event(w)) {
+                            Result.Ok(ev) => {
+                                // Los artefactos de public/ tambien emiten eventos: ignoralos
+                                // o el rebuild se retroalimenta.
+                                if (ev.path.contains("/public/")) { } else {
+                                    // Debounce: agrupa la rafaga de guardados.
+                                    var draining = true;
+                                    while (draining) {
+                                        match (fs.next_event_timeout(w, 150)) {
+                                            Result.Ok(more) => match (more) {
+                                                Option.Some(_e2) => { },
+                                                Option.None => {
+                                                    draining = false;
+                                                },
+                                            },
+                                            Result.Err(_e3) => {
+                                                draining = false;
+                                            },
+                                        }
+                                    }
+                                    run_build(dir);
+                                }
+                            },
+                            Result.Err(_e) => {
+                                time.sleep(1000);
+                            },
+                        }
+                    }
+                },
+                Result.Err(_e) => {
+                    var last = fingerprint(dir);
+                    while (true) {
+                        time.sleep(1000);
+                        let now = fingerprint(dir);
+                        if (now != last) {
+                            last = now;
+                            run_build(dir);
+                        }
+                    }
+                },
             }
         });
         eprint("raysite serving " + dir + "/public on http://127.0.0.1:" + to_string(port) + "/");
