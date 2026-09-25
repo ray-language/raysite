@@ -148,9 +148,9 @@ fn main() -> int {
         });
         eprint("raysite serving " + dir + "/public on http://127.0.0.1:" + to_string(port) + "/");
         match (webserver.serve_graceful("127.0.0.1", port, 1000, fn(req: webserver.Request) -> webserver.Response {
-    let path = if (req.path == "/") { "/index.html" } else { req.path };
-    webserver.static_response(dir + "/public", path)
-})) {
+            let path = if (req.path == "/") { "/index.html" } else { req.path };
+            webserver.static_response(dir + "/public", path)
+        })) {
             Result.Ok(n) => 0,
             Result.Err(e) => {
                 eprint("raysite: " + e);
@@ -173,7 +173,11 @@ fn main() -> int {
             eprint("raysite: " + path + " already exists");
             return 1;
         }
-        let front = "+++\ntitle = \"" + title + "\"\ndate = \"" + stamp + "\"\ndraft = true\n+++\n\nEscribe aquí.\n";
+        let front = "+++\ntitle = \""
+            + title
+            + "\"\ndate = \""
+            + stamp
+            + "\"\ndraft = true\n+++\n\nEscribe aquí.\n";
         match (fs.write_file(path, front)) {
             Result.Ok(n) => {
                 print(path);
