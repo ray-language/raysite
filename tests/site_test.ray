@@ -3,20 +3,10 @@ import std/fs;
 import content;
 import build;
 
-const SITE: string = "/tmp/raysite_test_site";
-
-fn wipe_dir(d: string) {
-    if (fs.exists(d)) {
-        match (fs.list_dir(d)) {
-            Result.Ok(names) => {
-                for f in names {
-                    fs.remove_file(d + "/" + f);
-                }
-            },
-            Result.Err(e) => { },
-        }
-    } else {
-        fs.mkdir(d);
+fn fresh_site() -> string {
+    match (fs.make_temp_dir("raysite_test_")) {
+        Result.Ok(d) => d,
+        Result.Err(e) => panic(e),
     }
 }
 
@@ -62,42 +52,41 @@ fn frontmatter_parses_and_defaults() {
 
 @test
 fn build_renders_pages_index_and_rss() {
-    wipe_dir(SITE);
-    wipe_dir(SITE + "/content");
-    wipe_dir(SITE + "/public");
+    let site = fresh_site();
+    fs.mkdir(site + "/content");
     fs.write_file(
-        SITE + "/site.toml",
+        site + "/site.toml",
         "[site]\ntitle = \"Bitácora\"\nbase_url = \"https://b.example\"\n"
     );
     fs.write_file(
-        SITE + "/content/uno.md",
+        site + "/content/uno.md",
         "+++\ntitle = \"Post Viejo\"\ndate = \"2026-01-01\"\n+++\n\nTexto **fuerte** y `código`.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
     );
     fs.write_file(
-        SITE + "/content/dos.md",
+        site + "/content/dos.md",
         "+++\ntitle = \"Post Nuevo\"\ndate = \"2026-08-01\"\n+++\n\n[enlace](https://example.com) y <script>alert(1)</script>\n"
     );
     fs.write_file(
-        SITE + "/content/borrador.md",
+        site + "/content/borrador.md",
         "+++\ntitle = \"Draft\"\ndraft = true\n+++\nno debe salir\n"
     );
-    let r = match (build.build(SITE)) {
+    let r = match (build.build(site)) {
         Result.Ok(x) => x,
         Result.Err(e) => panic(e),
     };
     assert_eq(r.pages, 2);
-    let viejo = must_read(SITE + "/public/post-viejo.html");
+    let viejo = must_read(site + "/public/post-viejo.html");
     assert(viejo.contains("<strong>fuerte</strong>"));
     assert(viejo.contains("<code>código</code>"));
     assert(viejo.contains("<table>"));
     assert(viejo.contains("Bitácora"));
-    let nuevo = must_read(SITE + "/public/post-nuevo.html");
+    let nuevo = must_read(site + "/public/post-nuevo.html");
     assert(nuevo.contains("<a href=\"https://example.com\">enlace</a>"));
     // Embedded HTML is ESCAPED by std/markdown (safe by design).
     assert(!nuevo.contains("<script>"));
     assert(nuevo.contains("&lt;script&gt;"));
     // Index: newest first.
-    let idx = must_read(SITE + "/public/index.html");
+    let idx = must_read(site + "/public/index.html");
     let pos_nuevo = match (idx.index_of("Post Nuevo")) {
         Option.Some(i) => i,
         Option.None => panic("index missing Post Nuevo"),
@@ -109,7 +98,21 @@ fn build_renders_pages_index_and_rss() {
     assert(pos_nuevo < pos_viejo);
     assert(!idx.contains("Draft"));
     // RSS present and pointing at base_url.
-    let feed = must_read(SITE + "/public/feed.xml");
+    let feed = must_read(site + "/public/feed.xml");
     assert(feed.contains("<rss version=\"2.0\">"));
     assert(feed.contains("https://b.example/post-nuevo.html"));
+    fs.remove_all(site);
+}
+
+@test
+fn new_post_escapes_the_title_into_valid_frontmatter() {
+    let title = "Dijo \"hola\" y C:\\temp";
+    let p = match (content.parse_page("n.md", content.new_post(title, "2026-09-25"))) {
+        Result.Ok(x) => x,
+        Result.Err(e) => panic(e),
+    };
+    assert_eq(p.title, title);
+    assert_eq(p.date, "2026-09-25");
+    assert(p.draft);
+    assert_eq(p.markdown, "Escribe aquí.");
 }

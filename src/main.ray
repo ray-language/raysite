@@ -110,17 +110,16 @@ fn main() -> int {
                                 // o el rebuild se retroalimenta.
                                 if (ev.path.contains("/public/")) { } else {
                                     // Debounce: agrupa la rafaga de guardados.
-                                    var draining = true;
-                                    while (draining) {
+                                    while (true) {
                                         match (fs.next_event_timeout(w, 150)) {
                                             Result.Ok(more) => match (more) {
                                                 Option.Some(_e2) => { },
                                                 Option.None => {
-                                                    draining = false;
+                                                    break;
                                                 },
                                             },
                                             Result.Err(_e3) => {
-                                                draining = false;
+                                                break;
                                             },
                                         }
                                     }
@@ -167,17 +166,15 @@ fn main() -> int {
         if (!fs.exists(dir + "/content")) {
             fs.mkdir(dir + "/content");
         }
-        let stamp = time.date_stamp(time.now_utc());
+        // YYYY-MM-DD, the form parse_page reads back (`date_stamp` is the basic
+        // YYYYMMDD form, which the frontmatter parser rejects).
+        let stamp = time.to_iso8601(time.now_utc()).substring(0, 10);
         let path = dir + "/content/" + slug + ".md";
         if (fs.exists(path)) {
             eprint("raysite: " + path + " already exists");
             return 1;
         }
-        let front = "+++\ntitle = \""
-            + title
-            + "\"\ndate = \""
-            + stamp
-            + "\"\ndraft = true\n+++\n\nEscribe aquí.\n";
+        let front = content.new_post(title, stamp);
         match (fs.write_file(path, front)) {
             Result.Ok(n) => {
                 print(path);
