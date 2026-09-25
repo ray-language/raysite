@@ -99,9 +99,14 @@ fn render_page(
 fn index_html(pages: [content.Page]) -> string {
     var items = "";
     for p in pages {
-        items = items + "<li><a href=\"" + p.slug + ".html\">" + escape_html(
-            p.title
-        ) + "</a> <time>" + p.date + "</time></li>\n";
+        items = items
+            + "<li><a href=\""
+            + p.slug
+            + ".html\">"
+            + escape_html(p.title)
+            + "</a> <time>"
+            + p.date
+            + "</time></li>\n";
     }
     "<ul class=\"index\">\n" + items + "</ul>\n"
 }
@@ -111,14 +116,27 @@ fn rss(cfg: SiteCfg, pages: [content.Page]) -> string {
     var i = 0;
     while (i < pages.len() && i < 20) {
         let p = pages[i];
-        items = items + "  <item>\n    <title>" + escape_html(
-            p.title
-        ) + "</title>\n    <link>" + cfg.base_url + "/" + p.slug + ".html</link>\n    <guid>" + cfg.base_url + "/" + p.slug + ".html</guid>\n  </item>\n";
+        items = items
+            + "  <item>\n    <title>"
+            + escape_html(p.title)
+            + "</title>\n    <link>"
+            + cfg.base_url
+            + "/"
+            + p.slug
+            + ".html</link>\n    <guid>"
+            + cfg.base_url
+            + "/"
+            + p.slug
+            + ".html</guid>\n  </item>\n";
         i = i + 1;
     }
-    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\"><channel>\n<title>" + escape_html(
-        cfg.title
-    ) + "</title>\n<link>" + cfg.base_url + "</link>\n" + items + "</channel></rss>\n"
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\"><channel>\n<title>"
+        + escape_html(cfg.title)
+        + "</title>\n<link>"
+        + cfg.base_url
+        + "</link>\n"
+        + items
+        + "</channel></rss>\n"
 }
 
 pub struct BuildResult {
