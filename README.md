@@ -40,7 +40,7 @@ Estructura del sitio: `site.toml` ([site] title/base_url/author) ·
 | serve con rebuild en vivo (verificado en caliente) | ✅ |
 | new: scaffold con slug y fecha | ✅ |
 | Binario nativo | ✅ |
-| Tests (slugify, frontmatter, build completo con seguridad HTML) | ✅ 3 |
+| Tests (slugify, frontmatter, build completo con seguridad HTML, scaffold de `new`) | ✅ 4 |
 | Subdirectorios en content/, taxonomías, assets copiados | 📋 v2 |
 
 ## Hallazgos de dogfood
@@ -51,13 +51,17 @@ Anotados en `raylang/IDEAS.md` §71:
    embebido sale escapado sin sanitizador externo — el modelo "seguro por
    diseño" aguanta su primera app real.
 2. **[RESUELTO — raylang M115.4]** Quinta app sondeando mtimes: `fs.watch` existe y `serve` lo usa.
-3. **Sin normalización Unicode**: el slugify translitera a mano las vocales
-   acentuadas del castellano y descarta el resto — `NFD`/`NFKD` no existen
-   (predicho por el catálogo).
+3. **[RESUELTO en el lenguaje — raylang M131]** Normalización Unicode: `std/text`
+   ya tiene `nfc`/`nfd`/`nfkc`/`nfkd`. El slugify mantiene su tabla castellana a
+   propósito: pasar a NFD cambiaría el slug (y la URL) de posts ya publicados con
+   otras letras acentuadas.
 4. Sin globbing (`content/**/*.md` se recorre a mano — patrón walk repetido
    de raysync).
 
 ## Desarrollo
+
+Requiere raylang 1.27 o posterior; `net` sale del índice de paquetes (`net = "^0.3.3"`
+en `ray.toml`, versión exacta en `ray.lock`).
 
 ```sh
 ray test
