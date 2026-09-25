@@ -15,8 +15,9 @@ pub struct Page {
 
 // Lowercase, ASCII-ish slug: letters/digits keep, the common Spanish
 // diacritics transliterate, everything else collapses to single dashes.
-// Unicode normalization does not exist in the language (recorded finding), so
-// anything outside this table just becomes a dash.
+// Anything outside this table just becomes a dash. `text.nfd` could fold every
+// accent, but it would also change the slug (and so the URL) of existing posts
+// whose titles use other letters, so the table stays as the contract.
 pub fn slugify(s: string) -> string {
     var out = "";
     var dash = true;
@@ -131,6 +132,21 @@ pub fn parse_page(filename: string, src: string) -> Result<Page, string> {
     )
 }
 
+// The scaffold `raysite new` writes: a draft dated `stamp`. The title is
+// escaped as a TOML basic string, so quotes or backslashes in it cannot break
+// (or inject keys into) the frontmatter.
+pub fn new_post(title: string, stamp: string) -> string {
+    let quoted = title.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+    `+++
+title = "${quoted}"
+date = "${stamp}"
+draft = true
++++
+
+Escribe aquí.
+`
+}
+
 // All non-draft pages under content/, newest first.
 pub fn load_all(content_dir: string) -> Result<[Page], string> {
     var out: [Page] = [];
@@ -147,45 +163,7 @@ pub fn load_all(content_dir: string) -> Result<[Page], string> {
     Result.Ok(sort_by_date(out))
 }
 
-fn merge_pages(a: [Page], b: [Page]) -> [Page] {
-    var out: [Page] = [];
-    var i = 0;
-    var j = 0;
-    while (i < a.len() && j < b.len()) {
-        if (a[i].date_ms >= b[j].date_ms) {
-            out.push(a[i]);
-            i = i + 1;
-        } else {
-            out.push(b[j]);
-            j = j + 1;
-        }
-    }
-    while (i < a.len()) {
-        out.push(a[i]);
-        i = i + 1;
-    }
-    while (j < b.len()) {
-        out.push(b[j]);
-        j = j + 1;
-    }
-    out
-}
-
+// Newest first. `sort_by` is stable, so pages sharing a date keep directory order.
 pub fn sort_by_date(xs: [Page]) -> [Page] {
-    if (xs.len() <= 1) {
-        return xs;
-    }
-    let mid = xs.len() / 2;
-    var left: [Page] = [];
-    var right: [Page] = [];
-    var i = 0;
-    while (i < xs.len()) {
-        if (i < mid) {
-            left.push(xs[i]);
-        } else {
-            right.push(xs[i]);
-        }
-        i = i + 1;
-    }
-    merge_pages(sort_by_date(left), sort_by_date(right))
+    sort_by(xs, fn(a: Page, b: Page) -> bool { a.date_ms > b.date_ms })
 }
