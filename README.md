@@ -60,7 +60,7 @@ Anotados en `raylang/IDEAS.md` §71:
 
 ## Desarrollo
 
-Requiere raylang 1.27 o posterior; `net` sale del índice de paquetes (`net = "^0.3.3"`
+Requiere raylang 1.27.13 o posterior; `net` sale del índice de paquetes (`net = "^0.3.7"`
 en `ray.toml`, versión exacta en `ray.lock`).
 
 ```sh
