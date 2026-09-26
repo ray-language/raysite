@@ -166,8 +166,8 @@ fn main() -> int {
         if (!fs.exists(dir + "/content")) {
             fs.mkdir(dir + "/content");
         }
-        // YYYY-MM-DD, the form parse_page reads back (`date_stamp` is the basic
-        // YYYYMMDD form, which the frontmatter parser rejects).
+        // YYYY-MM-DD, the readable form. parse_page also accepts the basic YYYYMMDD
+        // form of `time.date_stamp` (raylang 1.27.13), e.g. in hand-written posts.
         let stamp = time.to_iso8601(time.now_utc()).substring(0, 10);
         let path = dir + "/content/" + slug + ".md";
         if (fs.exists(path)) {
